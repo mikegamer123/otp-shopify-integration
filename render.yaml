@@ -30,10 +30,12 @@ services:
         sync: false
       - key: SHOPIFY_ADMIN_TOKEN
         sync: false
-      - key: SHOPIFY_CLIENT_ID
-        sync: false
-      - key: SHOPIFY_CLIENT_SECRET
-        sync: false
+      # SHOPIFY_CLIENT_ID / SHOPIFY_CLIENT_SECRET are deliberately NOT here.
+      # They are only read by scripts/get-token.js, which runs on your laptop to
+      # perform the OAuth exchange. The server has no auth route and never looks
+      # at them, so shipping them here would widen the blast radius of a leak
+      # for no benefit. The Admin API token is the only Shopify secret the
+      # running service needs.
       - key: OTP_MERCHANT_ID
         sync: false
       - key: OTP_SECRET_KEY
