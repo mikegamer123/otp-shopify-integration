@@ -46,6 +46,11 @@ razvojnoj dokumentaciji):
 - Kako se potpisuje notifikacija (ista polja/redosled kao gore, ili drugačije)?
 - Politika ponovnog slanja: koliko puta i u kom intervalu pokušavate ako ne dobijete
   HTTP 200? Koji HTTP status očekujete kao potvrdu?
+- **Koliko dugo čekate na odgovor pre nego što notifikaciju smatrate neuspelom
+  (connect timeout i read timeout, u sekundama)?** I da li ponavljate slanje i kada
+  istekne vreme, ili samo kada dobijete grešku sa statusom? — Ovo nam je potrebno
+  da bismo znali koliko servera sme da "spava": ako notifikacija stigne dok se
+  instanca budi, odgovor može da kasni 30-60 sekundi.
 - Sa kojih IP adresa stižu notifikacije (za whitelisting)?
 
 **5. Testiranje**
