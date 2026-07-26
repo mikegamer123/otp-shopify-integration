@@ -280,6 +280,24 @@ npm run install-snippet
 `install-snippet` rewrites `BACKEND_URL` from `APP_BASE_URL` on the way out, so
 the theme copy always matches wherever this is deployed.
 
+#### The demo gateway is deployed too
+
+Anyone can run the full flow without this laptop: the mock bank is mounted **inside**
+the bridge at `/mock-gateway`, so it is public and HTTPS like the rest of it.
+
+    https://otp-shopify-integration.onrender.com/mock-gateway/
+
+It is deliberately in-process rather than a second Render service, because Render
+wants a verified payment card for a second service even on the free plan. It is
+gated on `OTP_MOCK`, so the moment real payments are switched on it stops
+existing — smoke asserts that in a separate process (`/mock-gateway/pay` and the
+dev console both 404 with `OTP_MOCK=0`). A live store must never serve a page
+with an "approve" button that completes orders without taking money.
+
+`OTP_GATEWAY_URL` now defaults to `APP_BASE_URL/mock-gateway/pay`. When OTP send
+credentials, set `OTP_MERCHANT_ID`, `OTP_SECRET_KEY` and `OTP_GATEWAY_URL` in the
+Render dashboard and flip `OTP_MOCK` to `0`.
+
 #### Or skip hosting for now
 
 ```bash
