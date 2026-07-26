@@ -28,6 +28,42 @@ const sessions = new Map();
 
 const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
 
+// Render the itemised basket the bridge sent, so the customer can see what they
+// are authorising rather than a bare total.
+//
+// The basket arrives inside the signed payload, so by the time this runs the
+// signature has already been verified and these rows cannot have been edited in
+// the URL. If a real gateway does NOT sign its basket parameter, showing it is a
+// liability — see the note in lib/otp-adapter.js.
+//
+// The rows are still escaped: they originate from product titles in Shopify,
+// which a merchant can put anything into.
+function renderBasket(q) {
+  if (!q.basket) return "";
+  let rows;
+  try {
+    rows = JSON.parse(q.basket);
+  } catch {
+    return `<p style="font-size:.8rem;color:#a60">[basket could not be parsed]</p>`;
+  }
+  if (!Array.isArray(rows) || rows.length === 0) return "";
+
+  const body = rows
+    .map(
+      (r) => `<tr style="border-top:1px solid #eee">
+      <td style="padding:.4rem 0">${esc(r.n)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:#666;white-space:nowrap">${esc(r.q)} ${r.u ? "&times; " + esc(r.u) : ""}</td>
+      <td style="padding:.4rem 0;text-align:right;white-space:nowrap">${esc(r.t)}</td>
+    </tr>`
+    )
+    .join("\n");
+
+  return `<div style="font-size:.8rem;color:#666;margin-top:1rem">Stavke</div>
+  <table style="font-size:.85rem;color:#333;width:100%;border-collapse:collapse;margin-bottom:.5rem">
+    ${body}
+  </table>`;
+}
+
 // --- Landing page -----------------------------------------------------------
 // You cannot browse to /pay directly — a hosted payment page is only ever reached
 // via a signed redirect. Say so, instead of leaving "Cannot GET /".
@@ -71,7 +107,7 @@ app.get("/pay", (req, res) => {
   }
 
   // Recompute the request signature exactly as the adapter built it.
-  const expected = otp._sign(q, ["merchantId", "orderRef", "amount", "currency", "returnUrl", "callbackUrl"]);
+  const expected = otp._sign(q, otp._REQUEST_SIGNATURE_FIELDS);
   if (q.signature !== expected) {
     console.error("[mock-otp] REJECTED: request signature mismatch");
     console.error("  received:", q.signature);
@@ -101,7 +137,9 @@ app.get("/pay", (req, res) => {
   // can rebuild the session without the in-memory map. Otherwise restarting this
   // process (which `node --watch` does on every file save) orphans any payment
   // page already open in a browser, and clicking Plati just 404s.
-  const hidden = ["merchantId", "orderRef", "amount", "currency", "returnUrl", "callbackUrl", "signature"]
+  // basket is in the signed field list, so /decide cannot re-verify without it.
+  const hidden = ["merchantId", "orderRef", "amount", "currency", "returnUrl", "callbackUrl", "basket", "signature"]
+    .filter((k) => q[k] !== undefined)
     .map((k) => `<input type="hidden" name="${k}" value="${esc(q[k])}">`)
     .join("\n    ");
 
@@ -117,7 +155,10 @@ app.get("/pay", (req, res) => {
   <h1 style="font-size:1.1rem">Plaćanje karticom</h1>
   <table style="font-size:.9rem;color:#444;margin:1rem 0">
     <tr><td style="padding-right:1rem">Porudžbina</td><td><code>${esc(q.orderRef)}</code></td></tr>
-    <tr><td>Iznos</td><td><strong>${esc(q.amount)} ${esc(q.currency)}</strong></td></tr>
+  </table>
+  ${renderBasket(q)}
+  <table style="font-size:1rem;color:#111;margin:.25rem 0 1.25rem;width:100%">
+    <tr><td>Ukupno za naplatu</td><td style="text-align:right"><strong>${esc(q.amount)} ${esc(q.currency)}</strong></td></tr>
   </table>
   <form method="POST" action="${req.baseUrl}/decide" style="display:flex;flex-direction:column;gap:.5rem">
     ${hidden}
@@ -137,7 +178,7 @@ app.post("/decide", async (req, res) => {
   let session = sessions.get(String(orderRef));
   if (!session) {
     const b = req.body;
-    const expected = otp._sign(b, ["merchantId", "orderRef", "amount", "currency", "returnUrl", "callbackUrl"]);
+    const expected = otp._sign(b, otp._REQUEST_SIGNATURE_FIELDS);
     if (b.signature && b.signature === expected) {
       session = {
         merchantId: b.merchantId,

@@ -244,7 +244,7 @@ async function run() {
   // Everything the payment page carries in its hidden fields.
   const q = new URL(c10.redirectUrl).searchParams;
   const form = new URLSearchParams();
-  ["merchantId", "orderRef", "amount", "currency", "returnUrl", "callbackUrl", "signature"].forEach((k) =>
+  ["merchantId", "orderRef", "amount", "currency", "returnUrl", "callbackUrl", "basket", "signature"].forEach((k) =>
     form.set(k, q.get(k))
   );
   form.set("decision", "approve");
@@ -265,7 +265,7 @@ async function run() {
   const c10b = await startCheckout(1);
   const qb = new URL(c10b.redirectUrl).searchParams;
   const evil = new URLSearchParams();
-  ["merchantId", "orderRef", "currency", "returnUrl", "callbackUrl", "signature"].forEach((k) => evil.set(k, qb.get(k)));
+  ["merchantId", "orderRef", "currency", "returnUrl", "callbackUrl", "basket", "signature"].forEach((k) => evil.set(k, qb.get(k)));
   evil.set("amount", "1.00"); // signature no longer covers this
   evil.set("decision", "approve");
   gateway._clearSessions();
@@ -351,6 +351,48 @@ async function run() {
     check("a genuinely unknown ref is still unknown", /Nismo pronašli|couldn't find/i.test(goneePage));
 
     audit.eventsFor = realEventsFor;
+  }
+
+  // --- 9b. the payment page itemises what is being charged -----------------
+  //
+  // A hosted page showing only a total asks the customer to approve a number
+  // they cannot check. The basket is in the SIGNED payload precisely so it can
+  // be trusted: an itemised list the customer could edit in the URL would be
+  // worse than no list at all — the page would confidently show one price while
+  // the (correctly signed) amount charged something else.
+  console.log("\n9b. Payment page shows the itemised basket");
+  {
+    const c = await startCheckout(3);
+    const payUrl = new URL(c.redirectUrl);
+    const basket = payUrl.searchParams.get("basket");
+    check("the checkout sends a basket", !!basket, `basket=${basket}`);
+
+    const rows = JSON.parse(basket || "[]");
+    check("it has a row per line item", rows.length >= 1, JSON.stringify(rows));
+    check("with quantity and unit price", rows[0].q === 3 && Number(rows[0].u) > 0, JSON.stringify(rows[0]));
+    check(
+      "and the row totals reconcile to the amount charged",
+      Math.abs(rows.reduce((s, r) => s + Number(r.t), 0) - Number(c.amount)) < 0.01,
+      `rows=${rows.reduce((s, r) => s + Number(r.t), 0)} amount=${c.amount}`
+    );
+    check("delivery appears as its own line", rows.some((r) => /Dostava/.test(r.n)), JSON.stringify(rows.map((r) => r.n)));
+
+    const page = await (await fetch(c.redirectUrl)).text();
+    check("the hosted page renders the items", /Stavke/.test(page), page.slice(0, 200));
+    check("and shows a line's quantity", new RegExp(String(rows[0].q)).test(page));
+
+    // The forgery this guards against: edit the basket, keep the signature.
+    const tampered = new URL(c.redirectUrl);
+    tampered.searchParams.set(
+      "basket",
+      JSON.stringify([{ n: "Stolica (lažna cena)", q: 1, u: "1.00", t: "1.00" }])
+    );
+    const tamperedPage = await fetch(tampered.toString());
+    check(
+      "a tampered basket is REJECTED, not displayed",
+      tamperedPage.status === 400,
+      `got ${tamperedPage.status} — the customer could be shown a fake price`
+    );
   }
 
   // --- 10c. the fake bank must not exist in production ---------------------

@@ -219,6 +219,26 @@ app.post("/api/checkout", async (req, res) => {
     }
 
     const orderRef = String(draft.id);
+
+    // Itemise what the customer is about to authorise, from Shopify's own copy
+    // of the draft rather than from the cart the browser sent. A payment page
+    // that shows only a total asks people to approve a number they cannot check,
+    // and the request body is exactly what we refuse to trust for pricing.
+    const basket = (draft.line_items || []).map((li) => ({
+      name: [li.title, li.variant_title].filter(Boolean).join(" — "),
+      quantity: li.quantity,
+      unitPrice: li.price,
+      total: Number(li.price) * li.quantity,
+    }));
+    if (draft.shipping_line && Number(draft.shipping_line.price) > 0) {
+      basket.push({
+        name: `Dostava — ${draft.shipping_line.title}`,
+        quantity: 1,
+        unitPrice: draft.shipping_line.price,
+        total: Number(draft.shipping_line.price),
+      });
+    }
+
     const payment = otp.buildPaymentRequest({
       orderRef,
       amount: draft.total_price,
@@ -226,6 +246,7 @@ app.post("/api/checkout", async (req, res) => {
       returnUrl: `${config.appBaseUrl}/api/otp/return`,
       callbackUrl: `${config.appBaseUrl}/api/otp/webhook`,
       customer,
+      basket,
     });
 
     audit.write("checkout.started", {
