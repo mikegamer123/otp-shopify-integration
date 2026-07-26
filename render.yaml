@@ -1,0 +1,66 @@
+# Render blueprint. Create the service from this rather than clicking through
+# the dashboard, so the config is in the repo and reviewable.
+#
+# Free plan caveats, both deliberate and both handled:
+#   1. The instance sleeps after ~15 min idle and cold-starts in 30-60s. Keep it
+#      awake with an external 5-minute pinger on /health (UptimeRobot's free tier
+#      does this). 24/7 is ~730 instance-hours, inside Render's 750/month free
+#      allowance for a single service.
+#   2. The filesystem is ephemeral, so data/payments.jsonl is wiped on every
+#      restart and redeploy. /order-status falls back to Shopify's own draft
+#      order state, so a wiped log degrades to "still processing" rather than
+#      telling a paying customer their order does not exist.
+#
+# Neither caveat is acceptable for real card payments indefinitely — see the
+# go-live checklist in SETUP.md. They are fine for the OTP sandbox phase.
+
+services:
+  - type: web
+    name: otp-shopify-bridge
+    runtime: docker
+    plan: free
+    region: frankfurt # closest to Serbia of Render's regions
+    healthCheckPath: /health
+    autoDeploy: false # a payment bridge should not redeploy on every push
+    envVars:
+      # Secrets are deliberately NOT in this file. Set them in the Render
+      # dashboard (Environment > Add Secret File / Environment Variable), or
+      # they end up in git.
+      - key: SHOPIFY_STORE
+        sync: false
+      - key: SHOPIFY_ADMIN_TOKEN
+        sync: false
+      - key: SHOPIFY_CLIENT_ID
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
+      - key: OTP_MERCHANT_ID
+        sync: false
+      - key: OTP_SECRET_KEY
+        sync: false
+      - key: OTP_GATEWAY_URL
+        sync: false
+
+      - key: SHOPIFY_MOCK
+        value: "0"
+      # Stays 1 until OTP's sandbox credentials arrive. Flipping this to 0 is
+      # what makes real money move — do it deliberately.
+      - key: OTP_MOCK
+        value: "1"
+      - key: SHOPIFY_API_VERSION
+        value: "2025-01"
+      - key: STORE_CURRENCY
+        value: RSD
+      - key: DELIVERY_MODE
+        value: require
+      - key: ORDER_TIMEOUT_MINUTES
+        value: "15"
+      - key: ALLOWED_ORIGINS
+        value: https://nordis-garden.myshopify.com,https://i4g1zh-4e.myshopify.com
+      # Must match the service's own public URL, because it is what gets handed
+      # to OTP as the webhook and return address. Render exposes this for you.
+      - key: APP_BASE_URL
+        fromService:
+          type: web
+          name: otp-shopify-bridge
+          envVarKey: RENDER_EXTERNAL_URL

@@ -1,0 +1,22 @@
+{
+  "name": "otp-shopify-integration",
+  "version": "1.0.0",
+  "description": "Backend bridge between a Shopify store and OTP banka Srbija (iPay) payment gateway",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "mock-gateway": "node --watch mock-otp/gateway.js",
+    "smoke": "node scripts/smoke.js",
+    "qa-live": "node scripts/qa-live.js",
+    "get-token": "node scripts/get-token.js",
+    "check-shopify": "node scripts/check-shopify.js",
+    "install-snippet": "node scripts/install-snippet.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-fetch": "^2.7.0"
+  }
+}
