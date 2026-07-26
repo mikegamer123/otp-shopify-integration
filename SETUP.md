@@ -125,13 +125,20 @@ delivery really is free; it warns at boot.
 > needs an address step (post to `/api/delivery/rates`, let the customer choose,
 > then send `shippingAddress` + `shippingRateTitle`) before Phase 3 can proceed.
 
-**Known warning it will print:** delivery carries no VAT. *"Charge sales tax on
-shipping"* is off in Settings → Taxes and duties. Because prices are tax-inclusive
-the customer pays the same either way — but the split reported to the tax
-authority differs, and the fiscal receipt has to itemise delivery. On a 9 259 RSD
-order VAT is 1 483.33 as configured, versus 1 543.17 with the setting on. **Ask
-your accountant which is right for Nordis Garden** — I have deliberately not
-changed a tax setting on a live store.
+**Tax treatment — decided 2026-07-26: delivery is NOT taxed.** *"Charge sales tax
+on shipping"* stays **off** in Settings → Taxes and duties. Goods carry PDV at 20%
+and, because prices are tax-inclusive, that VAT is already inside `total_price`;
+the delivery line carries none.
+
+`npm run qa-live` asserts this on every run rather than warning about it, so if
+that checkbox is ever switched on the suite fails instead of the change going
+unnoticed. On a 9 259 RSD order the reported VAT is **1 483.33** (goods only); it
+would be 1 543.17 if delivery were taxable.
+
+**Phase 5 depends on this.** The fiscal receipt must use the same split — take the
+goods VAT from `order.total_tax` and label the shipping line untaxed. Recomputing
+VAT from `total_price` would silently tax delivery and put the fiscal record at
+odds with the Shopify order on every order that has a delivery charge.
 
 ### 2. Click through it yourself (5 minutes)
 

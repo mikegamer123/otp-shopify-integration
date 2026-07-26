@@ -622,6 +622,16 @@ async function issueFiscalReceipt(orderRef, paymentInfo) {
   // PHASE 5 — not yet implemented. Serbian law requires a fiscal receipt for every
   // completed retail sale, issued through a licensed L-PFR/V-PFR provider.
   //
+  // TAX TREATMENT, decided by the store owner 2026-07-26: goods carry PDV at 20%
+  // (prices are tax-inclusive, so the VAT is already inside total_price), and
+  // **delivery is NOT taxed**. Shopify is configured to match — "Charge sales
+  // tax on shipping" is off — and qa-live asserts it on every run.
+  //
+  // The receipt built here must use the same split, or the fiscal record and the
+  // Shopify order will disagree on every order that has a delivery charge. Take
+  // the goods VAT from order.total_tax and label the shipping line as untaxed;
+  // do not recompute VAT from total_price, which would silently tax delivery.
+  //
   // Left as a no-op rather than a throw so the mock flow runs green; swap in the
   // real provider call and the failure path above starts doing its job.
   if (process.env.FISCAL_PROVIDER_URL) {

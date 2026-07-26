@@ -594,23 +594,29 @@ async function main() {
     const totalVatIfShippingTaxed = Number(d?.total_price) / 6;
 
     check("VAT is still 20%", Number(d?.tax_lines?.[0]?.rate) === 0.2, JSON.stringify(d?.tax_lines));
+
+    // DECIDED 2026-07-26 by the store owner: delivery is NOT taxed. So
+    // "Charge sales tax on shipping" stays off in Settings > Taxes and duties,
+    // and VAT is charged on the goods only.
+    //
+    // This is asserted rather than warned about, deliberately. It was an open
+    // question; now it is a decision, and a decision that lives only in a
+    // settings checkbox will drift the first time someone clicks around in the
+    // admin. If that checkbox is ever turned on, total_tax jumps by the VAT on
+    // the delivery line and these two checks fail loudly — which is what you
+    // want, because the fiscal receipt has to agree with it.
     check(
-      "VAT is charged on the goods only",
+      "VAT is charged on the goods only, not on delivery",
       Math.abs(Number(d?.total_tax) - goodsVat) < 0.02,
       `total_tax=${d?.total_tax} goods VAT=${goodsVat.toFixed(2)}`
     );
-    // Not a failure — a setting the store owner has to decide on. Serbia taxes
-    // delivery as part of the supply, and the fiscal receipt has to itemise it.
-    if (Math.abs(Number(d?.total_tax) - totalVatIfShippingTaxed) > 0.02) {
-      warn(
-        'delivery carries no VAT — "Charge sales tax on shipping" is off in Settings > Taxes',
-        `On this order VAT is ${d?.total_tax} (goods only). With the setting on it would be ` +
-          `${totalVatIfShippingTaxed.toFixed(2)}, i.e. ${(STANDARD / 6).toFixed(2)} more.\n` +
-          "        The customer pays the same either way — prices are tax-inclusive — but the\n" +
-          "        split reported to the tax authority and printed on the fiscal receipt differs.\n" +
-          "        Confirm with your accountant which is right for Nordis Garden."
-      );
-    }
+    check(
+      "and delivery is NOT in the taxable base",
+      Math.abs(Number(d?.total_tax) - totalVatIfShippingTaxed) > 0.02,
+      `total_tax=${d?.total_tax} — this equals ${totalVatIfShippingTaxed.toFixed(2)}, i.e. ` +
+        `delivery has become taxable. "Charge sales tax on shipping" was turned on in ` +
+        `Settings > Taxes and duties; fiscalization must be updated to match.`
+    );
   }
 
   // ---- 16. Serbian characters ---------------------------------------------
