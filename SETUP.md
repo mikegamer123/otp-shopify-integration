@@ -3,7 +3,7 @@
 Ordered by what unblocks what. Steps marked **YOU** need your login, your money, or
 your credentials — I can't and won't do those.
 
-Current state: the whole payment flow is built and passing 32 end-to-end tests
+Current state: the whole payment flow is built and passing 67 end-to-end tests
 against mock versions of both Shopify and OTP. Nothing below is blocked on OTP
 except Phase 4.
 
@@ -34,9 +34,9 @@ the storefront domain from `ALLOWED_ORIGINS` makes the theme's `fetch()` to
 npm run smoke
 ```
 
-32 checks: successful payment, duplicate webhook, decline, abandonment, forged
+67 checks: successful payment, duplicate webhook, decline, abandonment, forged
 signature, tampered amount, unknown order, the customer-facing status page for
-every outcome, gateway restart mid-payment, and input validation. All should pass.
+every outcome, gateway restart mid-payment, input validation, delivery pricing and refusals, the customer being handed off to Shopify, and the mock gateway vanishing when OTP_MOCK=0. All should pass.
 
 ### 1b. QA against the real store (2 minutes)
 
