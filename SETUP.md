@@ -210,23 +210,84 @@ Shopify's own checkout and skipping OTP entirely. The snippet's Enter-key guard
 used `form.querySelector()`, which only sees descendants and so never fired.
 Fixed on 2026-07-26 by switching to `event.submitter` plus a `form.elements` scan.
 
-### 5. **YOU** — decide where this will be hosted
+### 5. **YOU** — deploy it
 
-The hard requirement: a **public HTTPS URL** for `/api/otp/webhook`. OTP's servers
-must reach it directly.
+Two hard requirements:
 
-My recommendation: **Railway** or **Render**. Reason — this service benefits from a
-persistent filesystem and long-lived process for the payment audit log, and both
-give you that with a normal `npm start`. Vercel/Netlify functions work too, but
-you'd need to move the audit log to a database first (see `AUDIT_SINK` in
-[lib/audit.js](lib/audit.js)).
+1. **A public HTTPS URL** for `/api/otp/webhook` — OTP's servers must reach it.
+2. **HTTPS specifically.** The storefront sends
+   `Content-Security-Policy: block-all-mixed-content; upgrade-insecure-requests`,
+   so a plain-http backend is blocked from a customer's browser. `http://localhost`
+   is exempt (that is why local testing works), but nothing else is.
 
-For sandbox testing you can skip hosting entirely and use a tunnel:
+Everything needed is in the repo: [Dockerfile](Dockerfile), [render.yaml](render.yaml),
+`/health` for the platform health check, and `PORT` read from the environment.
+
+#### Free tier, and what it actually costs you
+
+Free hosting has two properties that matter for a payment bridge:
+
+| | Effect | Handled? |
+|---|---|---|
+| Sleeps after ~15 min idle, 30–60s cold start | OTP's webhook may time out before we wake | **Partly.** Keep it awake with a 5-min external pinger (below). The platform can still restart at any time, so this is mitigation, not a fix. |
+| Ephemeral filesystem | `data/payments.jsonl` wiped on restart/redeploy | **Yes.** `/order-status` falls back to Shopify's own draft-order state, so a wiped log degrades to "still processing" instead of telling a paying customer their order does not exist. Covered by smoke §10b. |
+
+This is fine for the OTP **sandbox** phase, where no real money moves. Before the
+first real card, move to an always-on instance (Render Starter ~$7/mo, or a ~€4/mo
+VPS) and mount a volume at `/app/data`. That is on the go-live checklist.
+
+**Keep-alive.** Not from Shopify — Flow is event-driven and its scheduled trigger
+is too coarse, and a storefront ping only fires when someone visits, which is
+circular on a quiet store. Use [uptimerobot.com](https://uptimerobot.com) free:
+new HTTP(s) monitor → your `/health` URL → 5 minute interval. You get downtime
+alerts for the payment bridge as a side effect, which is worth having anyway.
+24/7 is ~730 instance-hours, inside Render's 750/month free allowance for one
+service.
+
+#### Deploy to Render
+
+The repo is already a git repo with a clean initial commit and `.env` ignored.
+
+```bash
+# 1. Create an empty repo on github.com (private is fine), then:
+git remote add origin https://github.com/<you>/otp-shopify-integration.git
+git push -u origin main
+```
+
+Then in Render: **New → Blueprint → connect the repo**. It reads `render.yaml`
+and creates the service. Set the secrets it asks for (`sync: false` in the
+blueprint) in **Environment**:
+
+```
+SHOPIFY_STORE          i4g1zh-4e.myshopify.com
+SHOPIFY_ADMIN_TOKEN    (from .env — never paste it into a chat or a PR)
+OTP_MERCHANT_ID        (blank until OTP send credentials)
+OTP_SECRET_KEY         (blank until OTP send credentials)
+OTP_GATEWAY_URL        (blank until OTP send credentials)
+```
+
+`APP_BASE_URL` wires itself to the service's public URL. `OTP_MOCK` stays `1`
+until OTP's sandbox credentials arrive — flipping it to `0` is what makes real
+money move.
+
+Finally, point the storefront at it and reinstall the snippet:
+
+```bash
+# .env: APP_BASE_URL=https://otp-shopify-bridge.onrender.com
+npm run install-snippet
+```
+
+`install-snippet` rewrites `BACKEND_URL` from `APP_BASE_URL` on the way out, so
+the theme copy always matches wherever this is deployed.
+
+#### Or skip hosting for now
+
 ```bash
 npx cloudflared tunnel --url http://localhost:3000
 ```
-That gives you a temporary public HTTPS URL pointing at your laptop. Put it in
-`APP_BASE_URL`.
+A temporary public HTTPS URL pointing at your laptop. Put it in `APP_BASE_URL`
+and re-run `npm run install-snippet`. Fine for a sandbox test session; the URL
+changes every restart.
 
 ---
 
