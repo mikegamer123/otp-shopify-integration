@@ -46,6 +46,22 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- The fake bank, mounted in-process -------------------------------------
+//
+// Only ever mounted when OTP_MOCK is on, so it cannot exist once real payments
+// are enabled — the same guard the dev console below uses.
+//
+// Why in-process rather than its own service: the gateway has to be reachable
+// from a customer's browser for anyone but the developer to test the flow, and
+// a second deployed service needs a verified payment card even on a free plan.
+// Mounting it here gives a public, HTTPS payment page for demos at no cost and
+// with nothing extra to keep in sync. When OTP's real gateway arrives, set
+// OTP_GATEWAY_URL, flip OTP_MOCK=0, and these routes stop existing.
+if (config.otpMock) {
+  // Required late so it is never even loaded in a real-payments deployment.
+  app.use("/mock-gateway", require("./mock-otp/gateway"));
+}
+
 // --- Dev console at / ------------------------------------------------------
 // Only mounted while something is mocked, so it can never appear in production.
 // Without this, opening http://localhost:3000 just says "Cannot GET /", which

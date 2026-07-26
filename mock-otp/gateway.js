@@ -31,7 +31,7 @@ const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">"
 // --- Landing page -----------------------------------------------------------
 // You cannot browse to /pay directly — a hosted payment page is only ever reached
 // via a signed redirect. Say so, instead of leaving "Cannot GET /".
-app.get("/", (_req, res) => {
+app.get("/", (req, res) => {
   res.set("Content-Type", "text/html; charset=utf-8").send(`<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Mock OTP gateway</title>
@@ -44,7 +44,7 @@ app.get("/", (_req, res) => {
    <code>/pay</code> can only be opened through a <em>signed</em> redirect from the bridge,
    the same way OTP's real page works.</p>
 <p><strong>To start a payment, go to the bridge instead:</strong></p>
-<p style="font-size:1.05rem"><a href="http://localhost:${config.port}/">http://localhost:${config.port}/</a></p>
+<p style="font-size:1.05rem"><a href="${config.appBaseUrl}/">${config.appBaseUrl}/</a></p>
 <p style="font-size:.85rem;color:#666">Click "Start checkout" there and you'll be redirected back here with valid parameters.</p>
 </body>`);
 });
@@ -66,7 +66,7 @@ app.get("/pay", (req, res) => {
 <p>This page needs payment parameters, and you've opened it without any${missing.length < REQUIRED.length ? ` (missing: <code>${missing.join("</code>, <code>")}</code>)` : ""}.
    That's expected — a hosted payment page is only ever reached through a signed redirect.</p>
 <p><strong>Nothing is broken.</strong> Start a payment from the bridge:</p>
-<p style="font-size:1.05rem"><a href="http://localhost:${config.port}/">http://localhost:${config.port}/</a></p>
+<p style="font-size:1.05rem"><a href="${config.appBaseUrl}/">${config.appBaseUrl}/</a></p>
 </body>`);
   }
 
@@ -119,7 +119,7 @@ app.get("/pay", (req, res) => {
     <tr><td style="padding-right:1rem">Porudžbina</td><td><code>${esc(q.orderRef)}</code></td></tr>
     <tr><td>Iznos</td><td><strong>${esc(q.amount)} ${esc(q.currency)}</strong></td></tr>
   </table>
-  <form method="POST" action="/decide" style="display:flex;flex-direction:column;gap:.5rem">
+  <form method="POST" action="${req.baseUrl}/decide" style="display:flex;flex-direction:column;gap:.5rem">
     ${hidden}
     <button name="decision" value="approve" style="padding:.7rem;background:#0a0;color:#fff;border:0;border-radius:4px;font-size:1rem;cursor:pointer">Plati (approve)</button>
     <button name="decision" value="decline" style="padding:.7rem;background:#c00;color:#fff;border:0;border-radius:4px;font-size:1rem;cursor:pointer">Odbij (decline)</button>
@@ -160,7 +160,7 @@ app.post("/decide", async (req, res) => {
 <p>This payment page is stale — it was opened before the gateway restarted, and its
    hidden fields no longer verify.</p>
 <p><strong>Nothing is broken in the bridge.</strong> Start a fresh checkout:</p>
-<p style="font-size:1.05rem"><a href="http://localhost:${config.port}/">http://localhost:${config.port}/</a></p>
+<p style="font-size:1.05rem"><a href="${config.appBaseUrl}/">${config.appBaseUrl}/</a></p>
 </body>`);
   }
 

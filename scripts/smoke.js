@@ -353,6 +353,51 @@ async function run() {
     audit.eventsFor = realEventsFor;
   }
 
+  // --- 10c. the fake bank must not exist in production ---------------------
+  //
+  // The mock gateway is mounted inside this service so it is reachable over
+  // HTTPS for demos. That is only safe if it genuinely disappears when real
+  // payments are switched on — a live store serving a page with an "approve"
+  // button that completes orders without taking money would be catastrophic.
+  //
+  // Asserted in a separate process, because the mount decision is made once at
+  // require time from OTP_MOCK.
+  console.log("\n10c. Mock gateway disappears when OTP_MOCK=0");
+  {
+    const mounted = await fetch(`${BASE}/mock-gateway/pay`);
+    check(
+      "with OTP_MOCK=1 the mock gateway is reachable",
+      mounted.status === 400, // 400 = "no payment params", i.e. the route exists
+      `got ${mounted.status}`
+    );
+
+    const { execFileSync } = require("child_process");
+    const probe = execFileSync(
+      process.execPath,
+      [
+        "-e",
+        // Both mocks off — the actual production shape. The dev console is
+        // gated on EITHER mock being on, so leaving SHOPIFY_MOCK=1 here would
+        // keep it mounted and prove nothing.
+        `process.env.OTP_MOCK="0";process.env.SHOPIFY_MOCK="0";process.env.OTP_SECRET_KEY="x";
+         process.env.OTP_MERCHANT_ID="x";process.env.OTP_GATEWAY_URL="https://example.invalid/pay";
+         const app=require(${JSON.stringify(require.resolve("../server"))});
+         const s=app.listen(0,async()=>{
+           const f=require(${JSON.stringify(require.resolve("node-fetch"))});
+           const p=s.address().port;
+           const g=await f("http://127.0.0.1:"+p+"/mock-gateway/pay");
+           const d=await f("http://127.0.0.1:"+p+"/");
+           console.log(JSON.stringify({gateway:g.status,devConsole:d.status}));
+           s.close();process.exit(0);
+         });`,
+      ],
+      { encoding: "utf8", timeout: 30000 }
+    );
+    const r = JSON.parse(probe.trim().split("\n").pop());
+    check("with OTP_MOCK=0 the mock gateway is GONE (404)", r.gateway === 404, `got ${r.gateway}`);
+    check("and the dev console is gone too", r.devConsole === 404, `got ${r.devConsole}`);
+  }
+
   // --- 11. delivery -------------------------------------------------------
   //
   // The bug these guard against: a draft order never applies a delivery rate on
