@@ -53,6 +53,19 @@ razvojnoj dokumentaciji):
   instanca budi, odgovor može da kasni 30-60 sekundi.
 - Sa kojih IP adresa stižu notifikacije (za whitelisting)?
 
+**4b. Prikaz stavki na stranici za plaćanje (basket / korpa)**
+- Da li vaša hostovana stranica može da prikaže **specifikaciju stavki** (naziv
+  artikla, količina, jedinična cena, iznos po stavci) pored ukupnog iznosa?
+- Ako može: koji je tačan format parametra? (JSON, ponovljeni indeksirani
+  parametri tipa `item[0].name`, ili string sa separatorom?) Koliko stavki
+  maksimalno i koliko karaktera sme da bude?
+- **Da li je taj parametar obuhvaćen potpisom?** — Ovo nam je ključno. Ako
+  stavke NISU potpisane, kupac može da izmeni parametar u URL-u i vidi lažne
+  cene na stranici banke dok se naplaćuje tačan (potpisan) iznos. U tom slučaju
+  radije ne bismo slali stavke uopšte.
+- Ako se šalje GET redirekcijom, koje je ograničenje dužine URL-a? (Duža korpa
+  nam može premašiti limit — da li onda moramo na POST?)
+
 **5. Testiranje**
 - Test kartice (brojevi, datum isteka, CVV) za scenarije: uspešna transakcija,
   odbijena transakcija, 3-D Secure izazov, timeout.
