@@ -251,8 +251,14 @@ async function sendCallback(session, status) {
 app._clearSessions = () => sessions.clear();
 
 if (require.main === module) {
-  app.listen(config.mockPort, () =>
-    console.log(`MOCK OTP gateway on http://localhost:${config.mockPort}/pay  (simulation only)`)
+  // Locally MOCK_OTP_PORT is set (4000) and wins, so the gateway and the bridge
+  // do not fight over a port. When this is deployed as its own service the host
+  // injects PORT and MOCK_OTP_PORT is left unset, so it binds where the platform
+  // expects. config.mockPort is last because it defaults to 4000 even when
+  // nothing is configured, which would make a deployed instance unreachable.
+  const listenPort = Number(process.env.MOCK_OTP_PORT || process.env.PORT || config.mockPort);
+  app.listen(listenPort, () =>
+    console.log(`MOCK OTP gateway listening on :${listenPort} /pay  (simulation only)`)
   );
 }
 

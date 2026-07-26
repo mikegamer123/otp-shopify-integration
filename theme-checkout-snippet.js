@@ -393,6 +393,58 @@
     refreshRates();
   }
 
+  // A payment that failed has nothing to show on Shopify — no order exists — so
+  // the backend sends the customer back to their cart with a flag instead of
+  // stranding them on a page belonging to the payment bridge. Turn that flag
+  // into something readable, then strip it from the URL so a refresh or a
+  // shared link does not re-announce a failure that already happened.
+  (function showPaymentOutcome() {
+    var params = new URLSearchParams(window.location.search);
+    var status = params.get("otp_status");
+    if (!status) return;
+
+    var COPY = {
+      declined: {
+        text:
+          "Vaša banka je odbila transakciju. Novac vam nije naplaćen — možete pokušati ponovo, drugom karticom.",
+        color: "#c00",
+        bg: "#fff5f5",
+      },
+      abandoned: {
+        text:
+          "Uplata nije završena i novac vam nije naplaćen. Vaša korpa je sačuvana — pokušajte ponovo.",
+        color: "#a60",
+        bg: "#fffbf0",
+      },
+    };
+    var copy = COPY[status];
+    if (!copy) return;
+
+    function render() {
+      var bar = el("div", {
+        text: copy.text,
+        style:
+          "margin:1rem auto;max-width:60rem;padding:.85rem 1rem;border-radius:6px;" +
+          "font-family:system-ui,sans-serif;font-size:.95rem;line-height:1.5;" +
+          "color:" + copy.color + ";background:" + copy.bg + ";border:1px solid " + copy.color + "33",
+      });
+      bar.setAttribute("role", "status");
+      var main = document.querySelector("main") || document.body;
+      main.insertBefore(bar, main.firstChild);
+      bar.scrollIntoView({ block: "nearest" });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", render);
+    } else {
+      render();
+    }
+
+    params.delete("otp_status");
+    var rest = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (rest ? "?" + rest : ""));
+  })();
+
   function el(tag, opts) {
     var node = document.createElement(tag);
     if (opts && opts.style) node.setAttribute("style", opts.style);

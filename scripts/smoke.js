@@ -201,11 +201,17 @@ async function run() {
   // determines whether they retry, double-pay, or file a chargeback.
   console.log("\n8. Customer-facing order status page");
 
-  const statusOf = async (ref) => (await fetch(`${BASE}/order-status?ref=${ref}`)).text();
+  // redirect:"manual" so a paid order — which now redirects to Shopify — does
+  // not send this offline test out to the internet chasing the Location header.
+  const statusOf = async (ref) =>
+    (await fetch(`${BASE}/order-status?ref=${ref}`, { redirect: "manual" })).text();
 
-  const paidPage = await statusOf(c1.orderRef);
-  check("paid order says confirmed", /potvrđena|confirmed/i.test(paidPage));
-  check("paid order does NOT auto-refresh", !/http-equiv="refresh"/.test(paidPage));
+  // A paid order no longer renders a confirmation here at all: it hands the
+  // customer to Shopify's own order-status page (asserted in §8b). What matters
+  // for this section is that it does NOT sit on one of our pages.
+  const paidRes = await fetch(`${BASE}/order-status?ref=${c1.orderRef}`, { redirect: "manual" });
+  check("paid order is handed off, not rendered by us", paidRes.status >= 300 && paidRes.status < 400, `got ${paidRes.status}`);
+  check("paid order does NOT auto-refresh", !/http-equiv="refresh"/.test(await paidRes.text()));
 
   const declinedPage = await statusOf(c3.orderRef);
   check("declined order says declined, not 'not found'", /odbila|declined/i.test(declinedPage), declinedPage.slice(0, 200));
@@ -277,6 +283,41 @@ async function run() {
   check("empty cart rejected", empty.status === 400, `got ${empty.status}`);
   const badQty = await post(`${BASE}/api/checkout`, { lineItems: [{ variant_id: 1, quantity: -5 }] });
   check("negative quantity rejected", badQty.status === 400, `got ${badQty.status}`);
+
+  // --- 8b. the customer ends up on Shopify, not on us ----------------------
+  //
+  // This service is plumbing. A paying customer should land on the shop's own
+  // order-status page showing their real itemised order; our pages exist only
+  // for the states Shopify cannot represent.
+  console.log("\n8b. Return redirects the customer to Shopify");
+  {
+    const noFollow = (url) => fetch(url, { redirect: "manual" });
+
+    const paidReturn = await noFollow(`${BASE}/api/otp/return?orderRef=${c1.orderRef}`);
+    const loc = paidReturn.headers.get("location") || "";
+    check("a paid return is a redirect", paidReturn.status >= 300 && paidReturn.status < 400, `got ${paidReturn.status}`);
+    check("and it points at Shopify's order-status page", /\/orders\/mock-token-/.test(loc), `location=${loc}`);
+    check("not at our own status page", !/order-status/.test(loc), `location=${loc}`);
+
+    // Declined: nothing exists on Shopify, so back to the cart with a flag the
+    // theme turns into a message — still the merchant's domain, not ours.
+    const declinedReturn = await noFollow(`${BASE}/api/otp/return?orderRef=${c3.orderRef}`);
+    const dloc = declinedReturn.headers.get("location") || "";
+    check("a declined return goes back to the storefront cart", /\/cart\?otp_status=declined/.test(dloc), `location=${dloc}`);
+
+    // Still in flight: we have to render something, and it must not claim success.
+    const pendingReturn = await noFollow(`${BASE}/api/otp/return?orderRef=${c4.orderRef}`);
+    const ploc = pendingReturn.headers.get("location") || "";
+    check("an unresolved return falls back to our status page", /order-status/.test(ploc), `location=${ploc}`);
+
+    // And the auto-refresh loop hands over the moment the webhook lands.
+    const statusPaid = await noFollow(`${BASE}/order-status?ref=${c1.orderRef}`);
+    check(
+      "the status page redirects to Shopify once paid",
+      statusPaid.status >= 300 && statusPaid.status < 400 && /\/orders\/mock-token-/.test(statusPaid.headers.get("location") || ""),
+      `status=${statusPaid.status} location=${statusPaid.headers.get("location")}`
+    );
+  }
 
   // --- 10b. the audit log is gone -----------------------------------------
   //

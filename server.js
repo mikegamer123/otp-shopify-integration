@@ -301,10 +301,30 @@ app.post("/api/otp/webhook", async (req, res) => {
       }
 
       const completed = await shopify.completeDraftOrder(result.orderRef);
+
+      // Shopify's own order-status page is where the customer should end up:
+      // it shows the real order, itemised, on the merchant's domain. This
+      // service is plumbing and the customer should never dwell on it.
+      //
+      // The URL carries a token and is only knowable after the order exists, so
+      // it is captured here and recorded in the audit log for /api/otp/return
+      // to redirect to. Failing to get it is not fatal — the customer falls
+      // back to our own status page, which still tells them the truth.
+      let orderStatusUrl;
+      if (completed.order_id) {
+        try {
+          const order = await shopify.getOrder(completed.order_id);
+          orderStatusUrl = order?.order_status_url;
+        } catch (err) {
+          console.error("could not read order_status_url:", err.message);
+        }
+      }
+
       audit.write("order.completed", {
         orderRef: result.orderRef,
         shopifyOrderId: completed.order_id,
         transactionId: result.transactionId,
+        orderStatusUrl,
       });
 
       // Record which OTP payment this order belongs to, and retag it from
@@ -373,11 +393,52 @@ app.post("/api/otp/webhook", async (req, res) => {
 // 3. Browser comes back from the hosted page. Cosmetic only.
 //    Accept both verbs — gateways differ on whether they GET or POST the return.
 // ---------------------------------------------------------------------------
-app.all("/api/otp/return", (req, res) => {
+// Where the customer's browser comes back to. Cosmetic only — the webhook has
+// already decided everything by now, or will shortly.
+//
+// The goal is that this service is invisible: a successful customer should land
+// on Shopify's own order-status page, on the shop's domain, showing their real
+// itemised order. We only render our own page when Shopify has nothing to show
+// yet (webhook still in flight) or nothing to show at all (declined).
+app.all("/api/otp/return", async (req, res) => {
   const params = { ...req.query, ...(req.body || {}) };
   const ref = params.orderRef || params.oid || "";
+  if (!ref) return res.redirect("/order-status");
+
+  // Deliberately ignores any status the gateway put in this request — the
+  // customer can edit it. State comes from the verified webhook via the audit
+  // log, or from Shopify itself.
+  const { state } = await resolveOrderState(ref);
+
+  if (state === "paid") {
+    const url = shopifyOrderStatusUrl(ref);
+    if (url) return res.redirect(url);
+  }
+
+  if (state === "declined" || state === "abandoned") {
+    // Nothing exists on Shopify to look at, so send them back to their cart
+    // with a flag the theme snippet turns into a message. Still their domain,
+    // still not ours.
+    const back = storefrontUrl();
+    if (back) return res.redirect(`${back}/cart?otp_status=${state}`);
+  }
+
   res.redirect(`/order-status?ref=${encodeURIComponent(ref)}`);
 });
+
+// The order-status URL Shopify minted for this order, recorded by the webhook.
+function shopifyOrderStatusUrl(ref) {
+  const done = audit.eventsFor(ref).find((e) => e.event === "order.completed" && e.orderStatusUrl);
+  return done?.orderStatusUrl;
+}
+
+// The customer-facing storefront. Falls back to the first allowed origin, which
+// is already the storefront the theme calls us from.
+function storefrontUrl() {
+  const explicit = process.env.STOREFRONT_URL;
+  const url = (explicit || config.allowedOrigins[0] || "").replace(/\/+$/, "");
+  return url || null;
+}
 
 // ---------------------------------------------------------------------------
 // 4. Status page.
@@ -462,6 +523,14 @@ async function resolveOrderState(ref) {
 app.get("/order-status", async (req, res) => {
   const ref = req.query.ref;
   const { state, elapsed = 0 } = ref ? await resolveOrderState(ref) : { state: "unknown" };
+
+  // The auto-refresh loop lands here while the webhook is still in flight. As
+  // soon as it arrives, hand the customer over to Shopify rather than showing
+  // our own "confirmed" page — this service should be a stop, not a destination.
+  if (state === "paid" && ref) {
+    const url = shopifyOrderStatusUrl(ref);
+    if (url) return res.redirect(url);
+  }
 
   const COPY = {
     paid: {
